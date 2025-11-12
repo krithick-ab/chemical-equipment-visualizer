@@ -1,0 +1,6 @@
+Equipment Name,Type,Flowrate,Pressure,Temperature
+Pump F2,Pump,150,6,310
+Valve G2,Valve,70,2,295
+Heater H2,Heater,130,5,350
+Condenser I2,Condenser,100,3,280
+Reactor J2,Reactor,120,8,370

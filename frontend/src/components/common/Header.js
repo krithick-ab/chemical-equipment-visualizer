@@ -2,8 +2,10 @@ import React from 'react';
 
 const Header = () => {
   return (
-    <header className="bg-blue-500 text-white p-4 shadow-md">
-      <h1 className="text-2xl font-bold">Chem CSV Visualizer</h1>
+    <header className="bg-white shadow-md w-full">
+      <div className="container mx-auto p-4 flex justify-start items-center">
+        <h1 className="text-3xl font-bold text-gray-800 font-serif">Chem CSV Visualizer</h1>
+      </div>
     </header>
   );
 };

@@ -1,0 +1,6 @@
+Equipment Name,Type,Flowrate,Pressure,Temperature
+Pump K3,Pump,160,7,315
+Valve L3,Valve,75,3,288
+Mixer M3,Mixer,125,5,330
+Cooler N3,Cooler,95,4,285
+Reactor O3,Reactor,115,8,365

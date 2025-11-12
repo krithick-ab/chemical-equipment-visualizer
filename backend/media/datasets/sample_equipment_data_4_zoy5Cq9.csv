@@ -1,0 +1,7 @@
+Equipment Name,Type,Flowrate,Pressure,Temperature
+Pump P4,Pump,140,6,305
+Valve Q4,Valve,85,3,292
+Heater R4,Heater,120,6,345
+Condenser S4,Condenser,105,4,282
+Reactor T4,Reactor,125,7,355
+AB CylinderCylinder,,200,4,100

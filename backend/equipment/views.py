@@ -6,7 +6,7 @@ from .serializers import DatasetSerializer
 import pandas as pd
 from django.http import HttpResponse
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from io import BytesIO
@@ -45,15 +45,30 @@ class UploadCSVAPIView(APIView):
             for old_dataset in old_datasets:
                 old_dataset.delete()
 
-            return Response(DatasetSerializer(dataset).data, status=status.HTTP_201_CREATED)
+            serializer = DatasetSerializer(dataset)
+            response_data = serializer.data
+            response_data['dataset_id'] = dataset.id  # Add this line
+            response_data['equipment_data'] = df.to_dict(orient='records')
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class HistoryAPIView(APIView):
     def get(self, request, *args, **kwargs):
         datasets = Dataset.objects.order_by('-uploaded_at')[:5]
-        serializer = DatasetSerializer(datasets, many=True)
-        return Response(serializer.data)
+        
+        # Manually construct the response data to include the filename
+        response_data = []
+        for dataset in datasets:
+            response_data.append({
+                'id': dataset.id,
+                'filename': dataset.filename,
+                'uploaded_at': dataset.uploaded_at,
+                'summary': dataset.summary
+            })
+            
+        return Response(response_data)
 
 
 class DatasetDetailAPIView(APIView):
@@ -61,7 +76,14 @@ class DatasetDetailAPIView(APIView):
         try:
             dataset = Dataset.objects.get(id=dataset_id)
             serializer = DatasetSerializer(dataset)
-            return Response(serializer.data)
+            response_data = serializer.data
+
+            # Read the CSV file and include its contents in the response
+            if dataset.csv_file:
+                df = pd.read_csv(dataset.csv_file.path)
+                response_data['equipment_data'] = df.to_dict(orient='records')
+
+            return Response(response_data)
         except Dataset.DoesNotExist:
             return Response({"error": "Dataset not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -78,16 +100,19 @@ class DownloadPDFReportAPIView(APIView):
         except Dataset.DoesNotExist:
             return Response({"error": "Dataset not found"}, status=status.HTTP_404_NOT_FOUND)
 
+        if not dataset.csv_file:
+            return Response({"error": "CSV file not found for this dataset"}, status=status.HTTP_404_NOT_FOUND)
+
+        df = pd.read_csv(dataset.csv_file.path)
+
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         styles = getSampleStyleSheet()
         story = []
 
-        # Title
         story.append(Paragraph("Chemical Equipment Parameter Report", styles['h1']))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Report Info
         story.append(Paragraph(f"Report generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
         story.append(Paragraph(f"Dataset ID: {dataset.id}", styles['Normal']))
         story.append(Paragraph(f"File Name: {dataset.filename}", styles['Normal']))
@@ -101,32 +126,42 @@ class DownloadPDFReportAPIView(APIView):
         story.append(Paragraph(f"Average Temperature: {summary.get('averages', {}).get('Temperature', 'N/A'):.2f}", styles['Normal']))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Equipment Type Distribution
-        story.append(Paragraph("Equipment Type Distribution:", styles['h2']))
-        type_dist = summary.get('type_distribution', {})
-        for eq_type, count in type_dist.items():
-            percentage = (count / summary.get('total_count', 1)) * 100
-            story.append(Paragraph(f"- {eq_type}: {count} ({percentage:.2f}%)", styles['Normal']))
+        # Data Insights
+        story.append(Paragraph("Data Insights", styles['h2']))
+        insights = self.generate_data_insights(df)
+        for insight in insights:
+            story.append(Paragraph(insight, styles['Normal']))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Chart
-        labels = type_dist.keys()
-        sizes = type_dist.values()
-        fig, ax = plt.subplots()
-        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-        ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-        plt.title('Equipment Type Distribution')
+        # Bar Chart
+        story.append(Paragraph("Equipment Metrics", styles['h2']))
+        bar_chart_img = self.create_bar_chart(df)
+        story.append(Image(bar_chart_img, width=6 * inch, height=4 * inch))
+        story.append(Spacer(1, 0.2 * inch))
 
-        img_buffer = BytesIO()
-        plt.savefig(img_buffer, format='png')
-        img_buffer.seek(0)
-        story.append(Image(img_buffer, width=4 * inch, height=3 * inch))
+        # Pie Chart
+        story.append(Paragraph("Temperature Distribution", styles['h2']))
+        pie_chart_img = self.create_pie_chart(df)
+        story.append(Image(pie_chart_img, width=4 * inch, height=3 * inch))
+        story.append(Spacer(1, 0.2 * inch))
 
-        # Footer
-        # This is a bit of a hack for a footer in ReportLab
+        # Data Table
+        story.append(Paragraph("Raw Data", styles['h2']))
+        data = [df.columns.values.tolist()] + df.values.tolist()
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), '#CCCCCC'),
+            ('TEXTCOLOR', (0, 0), (-1, 0), '#000000'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), '#f7f7f7'),
+            ('GRID', (0, 0), (-1, -1), 1, '#000000')
+        ]))
+        story.append(table)
+
         doc.build(story)
 
-        # Save the PDF to the model
         pdf_filename = f"report_{dataset.id}.pdf"
         buffer.seek(0)
         dataset.pdf_report.save(pdf_filename, ContentFile(buffer.read()), save=True)
@@ -135,3 +170,62 @@ class DownloadPDFReportAPIView(APIView):
         response = HttpResponse(buffer, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{pdf_filename}"'
         return response
+
+    def generate_data_insights(self, df):
+        insights = []
+        insights.append(f"- This dataset contains data for {len(df)} pieces of equipment.")
+        
+        max_flowrate_eq = df.loc[df['Flowrate'].idxmax()]
+        min_flowrate_eq = df.loc[df['Flowrate'].idxmin()]
+        insights.append(f"- Flowrate ranges from {min_flowrate_eq['Flowrate']} to {max_flowrate_eq['Flowrate']}. Equipment with highest flowrate: {max_flowrate_eq['Equipment Name']}.")
+
+        max_pressure_eq = df.loc[df['Pressure'].idxmax()]
+        min_pressure_eq = df.loc[df['Pressure'].idxmin()]
+        insights.append(f"- Pressure ranges from {min_pressure_eq['Pressure']} to {max_pressure_eq['Pressure']}. Equipment with highest pressure: {max_pressure_eq['Equipment Name']}.")
+
+        max_temp_eq = df.loc[df['Temperature'].idxmax()]
+        min_temp_eq = df.loc[df['Temperature'].idxmin()]
+        insights.append(f"- Temperature ranges from {min_temp_eq['Temperature']} to {max_temp_eq['Temperature']}°C. Equipment with highest temperature: {max_temp_eq['Equipment Name']}.")
+
+        return insights
+
+    def get_temperature_category(self, temp):
+        if temp < 290:
+            return "Cool (<290°C)"
+        elif 290 <= temp < 310:
+            return "Warm (290-310°C)"
+        elif 310 <= temp < 330:
+            return "Moderately High (310-330°C)"
+        elif 330 <= temp < 350:
+            return "High (330-350°C)"
+        else:
+            return "Extremely High (>350°C)"
+
+    def create_bar_chart(self, df):
+        fig, ax = plt.subplots(figsize=(10, 6))
+        df.plot(x='Equipment Name', y=['Flowrate', 'Pressure', 'Temperature'], kind='bar', ax=ax)
+        plt.title('Equipment Metrics')
+        plt.ylabel('Values')
+        plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png')
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer
+
+    def create_pie_chart(self, df):
+        df['temp_category'] = df['Temperature'].apply(self.get_temperature_category)
+        temp_distribution = df['temp_category'].value_counts()
+        
+        fig, ax = plt.subplots()
+        ax.pie(temp_distribution, labels=temp_distribution.index, autopct='%1.1f%%', startangle=90)
+        ax.axis('equal')
+        plt.title('Temperature Distribution')
+
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png')
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer

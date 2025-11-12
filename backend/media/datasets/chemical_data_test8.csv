@@ -1,0 +1,9 @@
+Equipment Name,Type,Flowrate,Pressure,Temperature
+Pump-Alpha,Pump,120.5,2.1,45.2
+Valve-Beta,Valve,15.3,4.5,32.8
+Compressor-Gamma,Compressor,530.2,12.3,80.1
+Reactor-Delta,Reactor,65.9,8.7,120.5
+Filter-Epsilon,Filter,23.7,3.4,28.6
+Heater-Zeta,Heater,48.1,5.8,300.4
+Cooler-Eta,Cooler,60.4,6.1,15.7
+Condenser-Theta,Condenser,250.9,10.0,90.2

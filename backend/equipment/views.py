@@ -1,7 +1,9 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from .models import Dataset
+from django.contrib.auth import get_user_model
 from .serializers import DatasetSerializer
 import pandas as pd
 from django.http import HttpResponse
@@ -16,7 +18,13 @@ from datetime import datetime
 from django.core.files.base import ContentFile
 
 class UploadCSVAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
+        user = request.user
+        if user.dataset_set.count() >= user.csv_upload_limit:
+            return Response({'error': f'You have reached your upload limit of {user.csv_upload_limit} CSV files.'}, status=status.HTTP_400_BAD_REQUEST)
+
         file = request.FILES.get('file')
         if not file:
             return Response({'error': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -35,15 +43,18 @@ class UploadCSVAPIView(APIView):
             }
 
             dataset = Dataset.objects.create(
+                user=user,
                 filename=file.name,
                 summary=summary,
                 csv_file=file
             )
 
             # Keep only the last 5 datasets
-            old_datasets = Dataset.objects.order_by('-uploaded_at')[5:]
-            for old_dataset in old_datasets:
-                old_dataset.delete()
+            # This logic needs to be updated to consider the user's limit
+            # For now, I will remove it as the limit is handled above
+            # old_datasets = Dataset.objects.order_by('-uploaded_at')[5:]
+            # for old_dataset in old_datasets:
+            #     old_dataset.delete()
 
             serializer = DatasetSerializer(dataset)
             response_data = serializer.data
@@ -55,8 +66,10 @@ class UploadCSVAPIView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class HistoryAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, *args, **kwargs):
-        datasets = Dataset.objects.order_by('-uploaded_at')[:5]
+        datasets = Dataset.objects.filter(user=request.user).order_by('-uploaded_at')
         
         # Manually construct the response data to include the filename
         response_data = []
@@ -72,9 +85,11 @@ class HistoryAPIView(APIView):
 
 
 class DatasetDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, dataset_id, *args, **kwargs):
         try:
-            dataset = Dataset.objects.get(id=dataset_id)
+            dataset = Dataset.objects.get(id=dataset_id, user=request.user)
             serializer = DatasetSerializer(dataset)
             response_data = serializer.data
 
@@ -88,13 +103,15 @@ class DatasetDetailAPIView(APIView):
             return Response({"error": "Dataset not found"}, status=status.HTTP_404_NOT_FOUND)
 
 class DownloadPDFReportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, dataset_id=None):
         try:
             if dataset_id:
                 if dataset_id == 'latest':
-                    dataset = Dataset.objects.latest('uploaded_at')
+                    dataset = Dataset.objects.filter(user=request.user).latest('uploaded_at')
                 else:
-                    dataset = Dataset.objects.get(id=dataset_id)
+                    dataset = Dataset.objects.get(id=dataset_id, user=request.user)
             else:
                 return Response({"error": "Dataset ID not provided"}, status=status.HTTP_400_BAD_REQUEST)
         except Dataset.DoesNotExist:
@@ -104,6 +121,12 @@ class DownloadPDFReportAPIView(APIView):
             return Response({"error": "CSV file not found for this dataset"}, status=status.HTTP_404_NOT_FOUND)
 
         df = pd.read_csv(dataset.csv_file.path)
+
+        # Get chart parameters from request, with defaults
+        bar_x = request.query_params.get('barX', 'Equipment Name')
+        bar_y_str = request.query_params.get('barY', 'Flowrate,Pressure,Temperature')
+        bar_y = bar_y_str.split(',')
+        pie_data = request.query_params.get('pieData', 'Temperature')
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -121,27 +144,28 @@ class DownloadPDFReportAPIView(APIView):
         # Summary Stats
         summary = dataset.summary
         story.append(Paragraph(f"Total Equipment Count: {summary.get('total_count', 'N/A')}", styles['Normal']))
-        story.append(Paragraph(f"Average Flowrate: {summary.get('averages', {}).get('Flowrate', 'N/A'):.2f}", styles['Normal']))
-        story.append(Paragraph(f"Average Pressure: {summary.get('averages', {}).get('Pressure', 'N/A'):.2f}", styles['Normal']))
-        story.append(Paragraph(f"Average Temperature: {summary.get('averages', {}).get('Temperature', 'N/A'):.2f}", styles['Normal']))
+        story.append(Paragraph(f"Average Flowrate: <b>{summary.get('averages', {}).get('Flowrate', 'N/A'):.2f}</b>", styles['Normal']))
+        story.append(Paragraph(f"Average Pressure: <b>{summary.get('averages', {}).get('Pressure', 'N/A'):.2f}</b>", styles['Normal']))
+        story.append(Paragraph(f"Average Temperature: <b>{summary.get('averages', {}).get('Temperature', 'N/A'):.2f}</b>", styles['Normal']))
         story.append(Spacer(1, 0.2 * inch))
 
         # Data Insights
-        story.append(Paragraph("Data Insights", styles['h2']))
+        story.append(Paragraph("Data Insights", styles['h3']))
+        story.append(Spacer(1, 0.1 * inch))
         insights = self.generate_data_insights(df)
         for insight in insights:
             story.append(Paragraph(insight, styles['Normal']))
-        story.append(Spacer(1, 0.2 * inch))
+        story.append(Spacer(1, 0.3 * inch))
 
         # Bar Chart
         story.append(Paragraph("Equipment Metrics", styles['h2']))
-        bar_chart_img = self.create_bar_chart(df)
+        bar_chart_img = self.create_bar_chart(df, bar_x, bar_y)
         story.append(Image(bar_chart_img, width=6 * inch, height=4 * inch))
         story.append(Spacer(1, 0.2 * inch))
 
         # Pie Chart
-        story.append(Paragraph("Temperature Distribution", styles['h2']))
-        pie_chart_img = self.create_pie_chart(df)
+        story.append(Paragraph(f"{pie_data} Distribution", styles['h2']))
+        pie_chart_img = self.create_pie_chart(df, pie_data)
         story.append(Image(pie_chart_img, width=4 * inch, height=3 * inch))
         story.append(Spacer(1, 0.2 * inch))
 
@@ -189,21 +213,36 @@ class DownloadPDFReportAPIView(APIView):
 
         return insights
 
-    def get_temperature_category(self, temp):
-        if temp < 290:
-            return "Cool (<290°C)"
-        elif 290 <= temp < 310:
-            return "Warm (290-310°C)"
-        elif 310 <= temp < 330:
-            return "Moderately High (310-330°C)"
-        elif 330 <= temp < 350:
-            return "High (330-350°C)"
+    def get_category(self, df, col_name, value):
+        if col_name == 'Temperature':
+            if value < 290:
+                return "Cool (<290°C)"
+            elif 290 <= value < 310:
+                return "Warm (290-310°C)"
+            elif 310 <= value < 330:
+                return "Moderately High (310-330°C)"
+            elif 330 <= value < 350:
+                return "High (330-350°C)"
+            else:
+                return "Extremely High (>350°C)"
         else:
-            return "Extremely High (>350°C)"
+            # For other numeric columns, create 4 equal-sized bins
+            min_val = df[col_name].min()
+            max_val = df[col_name].max()
+            bin_width = (max_val - min_val) / 4
+            
+            if value < min_val + bin_width:
+                return f"Low ({min_val:.2f} - {min_val + bin_width:.2f})"
+            elif value < min_val + 2 * bin_width:
+                return f"Medium-Low ({min_val + bin_width:.2f} - {min_val + 2 * bin_width:.2f})"
+            elif value < min_val + 3 * bin_width:
+                return f"Medium-High ({min_val + 2 * bin_width:.2f} - {min_val + 3 * bin_width:.2f})"
+            else:
+                return f"High ({min_val + 3 * bin_width:.2f} - {max_val:.2f})"
 
-    def create_bar_chart(self, df):
+    def create_bar_chart(self, df, x_col, y_cols):
         fig, ax = plt.subplots(figsize=(10, 6))
-        df.plot(x='Equipment Name', y=['Flowrate', 'Pressure', 'Temperature'], kind='bar', ax=ax)
+        df.plot(x=x_col, y=y_cols, kind='bar', ax=ax)
         plt.title('Equipment Metrics')
         plt.ylabel('Values')
         plt.xticks(rotation=45, ha='right')
@@ -215,14 +254,14 @@ class DownloadPDFReportAPIView(APIView):
         img_buffer.seek(0)
         return img_buffer
 
-    def create_pie_chart(self, df):
-        df['temp_category'] = df['Temperature'].apply(self.get_temperature_category)
-        temp_distribution = df['temp_category'].value_counts()
+    def create_pie_chart(self, df, data_col):
+        df['category'] = df[data_col].apply(lambda x: self.get_category(df, data_col, x))
+        distribution = df['category'].value_counts()
         
         fig, ax = plt.subplots()
-        ax.pie(temp_distribution, labels=temp_distribution.index, autopct='%1.1f%%', startangle=90)
+        ax.pie(distribution, labels=distribution.index, autopct='%1.1f%%', startangle=90)
         ax.axis('equal')
-        plt.title('Temperature Distribution')
+        plt.title(f'{data_col} Distribution')
 
         img_buffer = BytesIO()
         plt.savefig(img_buffer, format='png')

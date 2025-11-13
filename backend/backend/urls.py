@@ -27,7 +27,8 @@ class PingView(APIView):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('equipment.urls')),
+    path('api/equipment/', include('equipment.urls')),
+    path('api/auth/', include('users.urls')),
     path('api/ping/', PingView.as_view()),
 ]
 

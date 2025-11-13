@@ -1,5 +1,8 @@
 import React from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Login from './components/Login';
+import Register from './components/Register';
+import Home from './components/Home';
 import Header from './components/common/Header';
 import HomePage from './components/pages/HomePage';
 import ResultsPage from './components/pages/ResultsPage';
@@ -12,7 +15,10 @@ function App() {
         <Header />
         <main>
           <Routes>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/home" element={<Home />} />
+            <Route path="/homepage" element={<HomePage />} />
             <Route path="/results/:id" element={<ResultsPage />} />
           </Routes>
         </main>

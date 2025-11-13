@@ -16,7 +16,13 @@ const HomePage = () => {
 
   const fetchHistory = async () => {
     try {
-      const response = await axios.get("http://127.0.0.1:8000/api/history/");
+      const token = localStorage.getItem('access_token');
+      console.log("Access Token being sent:", token);
+      const response = await axios.get("http://127.0.0.1:8000/api/equipment/history/", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       setHistory(response.data);
     } catch (error) {
       console.error("Error fetching history:", error);
@@ -41,12 +47,14 @@ const HomePage = () => {
     formData.append("file", file);
 
     try {
+      const token = localStorage.getItem('access_token');
       const response = await axios.post(
-        "http://127.0.0.1:8000/api/upload/",
+        "http://127.0.0.1:8000/api/equipment/upload/",
         formData,
         {
           headers: {
             "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${token}`,
           },
         }
       );

@@ -84,12 +84,15 @@ class HistoryAPIView(APIView):
         return Response(response_data)
 
 
+from rest_framework.views import APIView
+
 class DatasetDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, dataset_id, *args, **kwargs):
         try:
             dataset = Dataset.objects.get(id=dataset_id, user=request.user)
+            print(f"Dataset found: {dataset.id}")
             serializer = DatasetSerializer(dataset)
             response_data = serializer.data
 
@@ -99,6 +102,14 @@ class DatasetDetailAPIView(APIView):
                 response_data['equipment_data'] = df.to_dict(orient='records')
 
             return Response(response_data)
+        except Dataset.DoesNotExist:
+            return Response({"error": "Dataset not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, dataset_id, *args, **kwargs):
+        try:
+            dataset = Dataset.objects.get(id=dataset_id, user=request.user)
+            dataset.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
         except Dataset.DoesNotExist:
             return Response({"error": "Dataset not found"}, status=status.HTTP_404_NOT_FOUND)
 

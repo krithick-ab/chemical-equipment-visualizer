@@ -274,6 +274,8 @@ class ResultsPage(QMainWindow):
 
         chart = QChart()
         chart.setTitle("Bar Chart: " + ", ".join(self.selected_bar_y) + " by " + self.selected_bar_x)
+        chart.setAnimationOptions(QChart.SeriesAnimations)
+
 
         series = QBarSeries()
         bar_sets = {col: QBarSet(col) for col in self.selected_bar_y}
@@ -350,6 +352,7 @@ class ResultsPage(QMainWindow):
 
         chart = QChart()
         chart.setTitle("Pie Chart: Distribution of " + self.selected_pie_data)
+
 
         series = QPieSeries()
         dynamic_distribution = self.calculate_dynamic_distribution()
@@ -472,27 +475,33 @@ class ResultsPage(QMainWindow):
         story.append(Paragraph(insights_text, styles['Normal']))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Capture Bar Chart
-        bar_chart_pixmap = QPixmap(self.bar_chart_view.size())
-        painter = QPainter(bar_chart_pixmap)
-        self.bar_chart_view.render(painter)
-        painter.end()
+        # Temporarily set frame style to NoFrame to remove borders for PDF export
+        self.bar_chart_view.setFrameStyle(QFrame.NoFrame)
+        self.pie_chart_view.setFrameStyle(QFrame.NoFrame)
+
+        # Capture images of the charts
+        bar_chart_image = self.bar_chart_view.grab()
+        pie_chart_image = self.pie_chart_view.grab()
+
+        # Restore frame style
+        self.bar_chart_view.setFrameStyle(QFrame.StyledPanel | QFrame.Box)
+        self.pie_chart_view.setFrameStyle(QFrame.StyledPanel | QFrame.Box)
+
+        # Save bar chart image to temporary file
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_bar_chart_file:
             bar_chart_image_path = tmp_bar_chart_file.name
-        bar_chart_pixmap.save(bar_chart_image_path)
+        bar_chart_image.save(bar_chart_image_path)
         story.append(Paragraph("Equipment Metrics", styles['h2']))
         story.append(Image(bar_chart_image_path, width=500, height=300))
         story.append(Spacer(1, 0.2 * inch))
 
-        # Capture Pie Chart
-        pie_chart_pixmap = QPixmap(self.pie_chart_view.size())
-        painter = QPainter(pie_chart_pixmap)
-        self.pie_chart_view.render(painter)
-        painter.end()
+        # Save pie chart image to temporary file
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_pie_chart_file:
             pie_chart_image_path = tmp_pie_chart_file.name
-        pie_chart_pixmap.save(pie_chart_image_path)
-        story.append(Paragraph("Flowrate Distribution", styles['h2']))
+        pie_chart_image.save(pie_chart_image_path)
+        # Add dynamic pie chart title
+        pie_chart_title = self.pie_chart_view.chart().title()
+        story.append(Paragraph(pie_chart_title, styles['h2']))
         story.append(Image(pie_chart_image_path, width=400, height=250))
         story.append(Spacer(1, 0.2 * inch))
 

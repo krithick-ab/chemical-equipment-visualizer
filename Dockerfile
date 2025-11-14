@@ -3,6 +3,7 @@ FROM python:3.10-slim-buster
 
 # Set environment variables
 ENV PYTHONUNBUFFERED 1
+ENV PYTHONPATH=/app/backend:$PYTHONPATH
 ENV DJANGO_SETTINGS_MODULE=backend.settings
 
 # Set the working directory in the container
@@ -13,7 +14,6 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     python3-dev \
-    nginx \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/*

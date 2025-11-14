@@ -3,7 +3,7 @@ FROM python:3.10-slim-buster
 
 # Set environment variables
 ENV PYTHONUNBUFFERED 1
-ENV DJANGO_SETTINGS_MODULE backend.settings
+ENV DJANGO_SETTINGS_MODULE backend.backend.settings
 
 # Set the working directory in the container
 WORKDIR /app

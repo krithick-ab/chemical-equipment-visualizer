@@ -328,7 +328,7 @@ class MainAppWindow(QMainWindow):
                         self.drag_drop_area.setText(f"Uploaded: {self.last_uploaded_file_name}")
                         self.drag_drop_area.setStyleSheet("font-size: 14px; font-weight: normal;") # Smaller font for uploaded text
                         self.view_upload_history() # Refresh history after successful upload
-                        self.results_page = ResultsPage(self.auth_token, self.last_uploaded_file_id, self.login_window)
+                        self.results_page = ResultsPage(self.auth_token, self.last_uploaded_file_id, self.login_window, self)
                         self.results_page.show()
                         self.hide()
                     elif response.status_code == 400 and "upload limit" in response.text:

@@ -22,8 +22,13 @@ class UploadCSVAPIView(APIView):
 
     def post(self, request, *args, **kwargs):
         user = request.user
-        if user.dataset_set.count() >= user.csv_upload_limit:
-            return Response({'error': f'You have reached your upload limit of {user.csv_upload_limit} CSV files.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Check if the user has reached their upload limit
+        current_datasets_count = user.dataset_set.count()
+        if current_datasets_count >= user.csv_upload_limit:
+            # If limit is reached, delete the oldest dataset
+            oldest_dataset = user.dataset_set.order_by('uploaded_at').first()
+            if oldest_dataset:
+                oldest_dataset.delete()
 
         file = request.FILES.get('file')
         if not file:

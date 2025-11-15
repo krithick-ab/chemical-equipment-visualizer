@@ -1,0 +1,6 @@
+Equipment Name,Type,Flowrate,Pressure,Temperature
+Pump-X,Pump,37.9,14.5,201.5
+Pump-Q,Pump,19.8,8.3,44.3
+Reactor-A,Reactor,228.6,2.5,28.5
+Valve-R,Valve,501.9,10.4,47.3
+Filter-B,Filter,454.9,2.5,128.7
